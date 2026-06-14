@@ -324,6 +324,7 @@
         });
 
         async function loadUserProfileAndContext(userId) {
+                async function loadUserProfileAndContext(userId, retries = 3) {
             try {
                 const { data: profile, error } = await supabaseClient
                     .from('profiles')
@@ -331,25 +332,25 @@
                     .eq('id', userId)
                     .maybeSingle();
 
-                if (error || !profile || !profile.organization_id) {
-                    // Fallback timing delay safeguard to wait for the Postgres trigger to settle
+                // If profile or organization link isn't ready yet, retry up to 3 times
+                if ((error || !profile || !profile.organization_id) && retries > 0) {
+                    console.log(`Profile not fully ready yet. Retrying... (${retries} attempts left)`);
                     setTimeout(async () => {
-                        const { data: retryProfile } = await supabaseClient
-                            .from('profiles')
-                            .select('*, organizations(org_name, invite_code)')
-                            .eq('id', userId)
-                            .maybeSingle();
-                        
-                        if (retryProfile && retryProfile.organization_id) {
-                            renderDashboard(retryProfile);
-                        }
-                    }, 1000);
+                        await loadUserProfileAndContext(userId, retries - 1);
+                    }, 1500); // 1.5-second gap between retries
+                    return;
+                }
+
+                // If we ran out of retries and still have nothing
+                if (!profile || !profile.organization_id) {
+                    alert("Account setup is taking longer than expected. Please refresh the page or try logging in again.");
                     return;
                 }
 
                 renderDashboard(profile);
             } catch (err) {
-                console.error(err);
+                console.error("Critical Auth Context Error:", err);
+                alert("An error occurred while loading your dashboard. Please try again.");
             }
         }
 
