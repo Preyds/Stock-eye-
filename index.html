@@ -14,7 +14,6 @@
         <div class="max-w-6xl mx-auto flex justify-between items-center">
             <h1 class="text-xl font-bold tracking-tight">📦 MediStock Tracker</h1>
             <div class="flex items-center gap-3">
-                <!-- Option 3 Action Button Inserted into Navbar Layout -->
                 <button id="export-btn" class="text-xs bg-blue-500 hover:bg-blue-700 font-semibold px-3 py-1.5 rounded-full transition-colors cursor-pointer flex items-center gap-1 border border-blue-400/30 shadow-sm">
                     📥 Export CSV
                 </button>
@@ -148,6 +147,30 @@
             }
         }
 
+        // Setup Realtime WebSocket Sync Engine
+        function initializeRealtimeSync() {
+            supabaseClient
+                .channel('inventory-changes')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, (payload) => {
+                    if (payload.eventType === 'INSERT') {
+                        // Avoid duplicates if added locally
+                        if (!inventory.some(item => item.id === payload.new.id)) {
+                            inventory.push(payload.new);
+                        }
+                    } else if (payload.eventType === 'UPDATE') {
+                        const index = inventory.findIndex(item => item.id === payload.new.id);
+                        if (index !== -1) inventory[index] = payload.new;
+                    } else if (payload.eventType === 'DELETE') {
+                        inventory = inventory.filter(item => item.id !== payload.old.id);
+                    }
+                    
+                    // Re-render user interface cleanly with fresh updates
+                    renderTable();
+                    updateStats();
+                })
+                .subscribe();
+        }
+
         // Add new item to cloud database
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -170,14 +193,12 @@
                     return;
                 }
 
-                if (data && data.length > 0) {
+                // If realtime handles the push, we just clean up the form input fields safely
+                if (data && data.length > 0 && !inventory.some(item => item.id === data[0].id)) {
                     inventory.push(data[0]);
-                } else {
-                    await fetchInventory();
+                    renderTable();
+                    updateStats();
                 }
-                
-                renderTable();
-                updateStats();
                 form.reset();
             } catch (err) {
                 console.error('Unexpected insert error:', err);
@@ -194,12 +215,8 @@
 
                 if (error) {
                     alert('Failed to delete item: ' + error.message);
-                    return;
                 }
-
-                inventory = inventory.filter(item => item.id !== id);
-                renderTable();
-                updateStats();
+                // Note: The local UI updates smoothly via the realtime socket stream!
             } catch (err) {
                 console.error(err);
             }
@@ -220,45 +237,30 @@
 
                 if (error) {
                     alert('Failed to update quantity: ' + error.message);
-                    return;
                 }
-
-                item.qty = newQty;
-                renderTable();
+                // Note: The local UI updates smoothly via the realtime socket stream!
             } catch (err) {
                 console.error(err);
             }
         };
 
-        // Option 3 Logic: Compile local state array into downloaded spreadsheet file
+        // Export data to a spreadsheet CSV file
         exportBtn.addEventListener('click', () => {
             if (inventory.length === 0) {
                 alert('There are no items in your inventory tracking database to export.');
                 return;
             }
 
-            // Standard spreadsheet formatting headers
             const headers = ['Item Name', 'Batch ID', 'Quantity', 'Expiry Date', 'Status Class'];
-            
-            // Format spreadsheet data rows safely escaping quotes or comma breaking text structures
             const csvRows = inventory.map(item => {
                 const statusCheck = getExpiryStatus(item.expiry);
                 const safeName = `"${item.name.replace(/"/g, '""')}"`;
                 const safeBatch = `"${item.batch.replace(/"/g, '""')}"`;
                 
-                return [
-                    safeName,
-                    safeBatch,
-                    item.qty,
-                    item.expiry,
-                    statusCheck.text
-                ].join(',');
+                return [safeName, safeBatch, item.qty, item.expiry, statusCheck.text].join(',');
             });
 
-            // Combine components into unified spreadsheet data string
             const csvContent = [headers.join(','), ...csvRows].join('\n');
-            
-            // Build temporary application download binary link pipeline
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const downloadUrl = URL.createObjectURL(blob);
             const hiddenAnchor = document.createElement('a');
@@ -296,24 +298,16 @@
         function renderTable() {
             tableBody.innerHTML = '';
             
-            // 1. Apply Search Filter First
             const filterText = searchBar.value.toLowerCase();
             let processedData = inventory.filter(item => item.name.toLowerCase().includes(filterText));
 
-            // 2. Apply Sorting Selection
             const sortRule = sortDropdown.value;
             processedData.sort((a, b) => {
-                if (sortRule === 'expiry-asc') {
-                    return new Date(a.expiry) - new Date(b.expiry);
-                } else if (sortRule === 'expiry-desc') {
-                    return new Date(b.expiry) - new Date(a.expiry);
-                } else if (sortRule === 'name-asc') {
-                    return a.name.localeCompare(b.name);
-                } else if (sortRule === 'qty-asc') {
-                    return a.qty - b.qty;
-                } else if (sortRule === 'qty-desc') {
-                    return b.qty - a.qty;
-                }
+                if (sortRule === 'expiry-asc') return new Date(a.expiry) - new Date(b.expiry);
+                if (sortRule === 'expiry-desc') return new Date(b.expiry) - new Date(a.expiry);
+                if (sortRule === 'name-asc') return a.name.localeCompare(b.name);
+                if (sortRule === 'qty-asc') return a.qty - b.qty;
+                if (sortRule === 'qty-desc') return b.qty - a.qty;
                 return 0;
             });
 
@@ -323,12 +317,10 @@
             }
             emptyState.classList.add('hidden');
 
-            // 3. Inject and Render HTML rows
             processedData.forEach(item => {
                 const expiryInfo = getExpiryStatus(item.expiry);
                 const formattedDate = new Date(item.expiry).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 
-                // Option 2 Part A: Dynamic row tinting based on visual urgency
                 let rowClass = "hover:bg-slate-50/50 transition-colors";
                 if (expiryInfo.status === 'expired') {
                     rowClass = "bg-red-50/40 hover:bg-red-100/50 text-red-950 transition-colors";
@@ -336,10 +328,8 @@
                     rowClass = "bg-amber-50/30 hover:bg-amber-100/40 text-amber-950 transition-colors";
                 }
 
-                // Option 2 Part B: Smart low-stock threshold warning systems
                 let qtyClass = "font-semibold text-slate-900";
                 let qtyBadge = "";
-                
                 if (item.qty === 0) {
                     qtyClass = "text-red-600 font-bold";
                     qtyBadge = `<span class="text-[10px] px-1.5 py-0.5 font-bold uppercase tracking-wide bg-red-100 text-red-800 rounded-sm border border-red-200 w-fit">OUT</span>`;
@@ -380,7 +370,6 @@
         // Calculate Overview Data
         function updateStats() {
             totalItemsEl.textContent = `Total Items: ${inventory.length}`;
-            
             let expiredCount = 0;
             let warningCount = 0;
 
@@ -394,8 +383,9 @@
             warningBadge.textContent = `${warningCount} Near Expiry (90d)`;
         }
 
-        // Run cloud setup data fetch on load
+        // Run client load procedures
         fetchInventory();
+        initializeRealtimeSync();
     </script>
 </body>
 </html>
