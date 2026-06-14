@@ -138,29 +138,41 @@
             if (!session) window.location.href = 'index.html';
         });
 
-                async function loadUserProfileAndContext(userId, retries = 8) { // Increased base retries from 4 to 8
+                        async function loadUserProfileAndContext(userId, retries = 5) {
             try {
+                // Force Supabase to refresh the local session token to pick up new user metadata
+                if (retries === 5) {
+                    await supabaseClient.auth.refreshSession();
+                }
+
                 const { data: profile, error } = await supabaseClient
                     .from('profiles')
                     .select('*, organizations(org_name, invite_code)')
                     .eq('id', userId)
                     .maybeSingle();
 
-                // Check if profile is missing, or if database triggers are still working on linking the organization
+                console.log("Debug - Current Profile State:", profile);
+
+                // If profile or organization link isn't found, wait and try again
                 if ((error || !profile || !profile.organization_id) && retries > 0) {
-                    console.log(`Database profiles row settling... Retries remaining: ${retries}`);
-                    setTimeout(() => loadUserProfileAndContext(userId, retries - 1), 2000); // 2-second interval gives the database breathing room
+                    setTimeout(() => loadUserProfileAndContext(userId, retries - 1), 2000);
                     return;
                 }
 
-                // If it completely runs out of time after 16 total seconds
+                // FALLBACK BYPASS: If it still fails, let's break the loading screen anyway so you can debug or try using the app
                 if (!profile || !profile.organization_id) {
-                    alert("Your workspace setup is taking a moment to initialize on our servers. Please wait a few seconds and refresh this page.");
-                    overlay.classList.add('hidden'); // Hide the spinner so they can see the layout or reload manually
+                    console.error("Auth Error: Profile row or organization_id is missing in public.profiles table.");
+                    
+                    // Temporary mock settings so the UI doesn't crash
+                    userProfile = profile || { organization_id: 'DEBUG_MODE' };
+                    navOrgDisplay.textContent = "Debug Mode (Check DB Triggers)";
+                    overlay.classList.add('hidden');
+                    
+                    alert("Workspace data not found in database. Entering fallback debug mode so you can inspect the console/page.");
                     return;
                 }
 
-                // If everything is found successfully, bind the session context
+                // Standard Successful Boot
                 userProfile = profile;
                 navOrgDisplay.textContent = `${profile.organizations.org_name} (Code: ${profile.organizations.invite_code})`;
                 overlay.classList.add('hidden');
@@ -169,9 +181,10 @@
                 initializeRealtimeSync();
             } catch (err) {
                 console.error("Dashboard Boot Error:", err);
-                alert("An unexpected error occurred while verifying your workspace.");
+                overlay.classList.add('hidden');
             }
         }
+
 
         logoutBtn.addEventListener('click', () => supabaseClient.auth.signOut());
 
