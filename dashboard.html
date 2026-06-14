@@ -24,7 +24,7 @@
                     <h1 class="text-xl font-bold tracking-tight">📦 MediStock</h1>
                     <div class="flex flex-col gap-0.5 ml-2">
                         <span id="nav-org-display" class="text-xs bg-blue-700 text-blue-100 font-bold px-2.5 py-1 rounded border border-blue-500/30 font-mono w-fit">Loading Workspace...</span>
-                        <!-- New element placeholder to render the active user identity -->
+                        <!-- Placeholder rendering the active user identity -->
                         <span id="nav-user-display" class="text-[11px] text-blue-200 font-medium px-0.5"></span>
                     </div>
                 </div>
@@ -145,7 +145,6 @@
 
         async function loadUserProfileAndContext(userId, retries = 5) {
             try {
-                // Force Supabase to refresh the local session token to pick up new user metadata
                 if (retries === 5) {
                     await supabaseClient.auth.refreshSession();
                 }
@@ -158,13 +157,11 @@
 
                 console.log("Debug - Current Profile State:", profile);
 
-                // If profile or organization link isn't found, wait and try again
                 if ((error || !profile || !profile.organization_id) && retries > 0) {
                     setTimeout(() => loadUserProfileAndContext(userId, retries - 1), 2000);
                     return;
                 }
 
-                // FALLBACK BYPASS: If it still fails, break loading screen anyway for testing layout state
                 if (!profile || !profile.organization_id) {
                     console.error("Auth Error: Profile row or organization_id is missing in public.profiles table.");
                     
@@ -177,14 +174,11 @@
                     return;
                 }
 
-                // Standard Successful Boot Integration
                 userProfile = profile;
                 navOrgDisplay.textContent = `${profile.organizations.org_name} (Code: ${profile.organizations.invite_code})`;
                 
-                // Formats and injects the dynamic string: "FullName (Role)"
                 if (navUserDisplay) {
                     const cleanRole = profile.role ? profile.role.trim().toLowerCase() : 'user';
-                    // Beautiful custom mapping logic for aesthetic presentation
                     const displayRole = cleanRole === 'admin' ? 'Administrator' : cleanRole === 'keeper' ? 'Store Keeper' : 'Team Member';
                     navUserDisplay.textContent = `${profile.full_name || 'Active Worker'} • ${displayRole}`;
                 }
@@ -198,7 +192,6 @@
                 overlay.classList.add('hidden');
             }
         }
-
 
         logoutBtn.addEventListener('click', () => supabaseClient.auth.signOut());
 
@@ -221,8 +214,8 @@
 
             if (!error) {
                 inventory = data || [];
-                renderTable();
                 updateStats();
+                renderTable(); // Renders clean immediately with data
             }
         }
 
@@ -241,8 +234,8 @@
                     } else if (payload.eventType === 'DELETE') {
                         inventory = inventory.filter(i => i.id !== payload.old.id);
                     }
-                    renderTable();
                     updateStats();
+                    renderTable();
                 }).subscribe();
         }
 
@@ -260,8 +253,8 @@
             if (error) alert('Error saving entity: ' + error.message);
             else {
                 if (data && !inventory.some(i => i.id === data[0].id)) inventory.push(data[0]);
-                renderTable();
                 updateStats();
+                renderTable();
                 form.reset();
             }
         });
