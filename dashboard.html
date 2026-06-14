@@ -22,7 +22,11 @@
             <div class="max-w-6xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-3">
                 <div class="flex items-center gap-2">
                     <h1 class="text-xl font-bold tracking-tight">📦 MediStock</h1>
-                    <span id="nav-org-display" class="text-xs bg-blue-700 text-blue-100 font-bold px-2.5 py-1 rounded border border-blue-500/30 font-mono">Loading Workspace...</span>
+                    <div class="flex flex-col gap-0.5 ml-2">
+                        <span id="nav-org-display" class="text-xs bg-blue-700 text-blue-100 font-bold px-2.5 py-1 rounded border border-blue-500/30 font-mono w-fit">Loading Workspace...</span>
+                        <!-- New element placeholder to render the active user identity -->
+                        <span id="nav-user-display" class="text-[11px] text-blue-200 font-medium px-0.5"></span>
+                    </div>
                 </div>
                 <div class="flex items-center gap-3 w-full sm:w-auto justify-end">
                     <button id="export-btn" class="text-xs bg-blue-500 hover:bg-blue-700 font-semibold px-3 py-1.5 rounded-full transition-colors cursor-pointer flex items-center gap-1 border border-blue-400/30 shadow-sm">
@@ -123,6 +127,7 @@
         let userProfile = null;
 
         const navOrgDisplay = document.getElementById('nav-org-display');
+        const navUserDisplay = document.getElementById('nav-user-display');
         const logoutBtn = document.getElementById('logout-btn');
         const overlay = document.getElementById('loading-overlay');
 
@@ -138,7 +143,7 @@
             if (!session) window.location.href = 'index.html';
         });
 
-                        async function loadUserProfileAndContext(userId, retries = 5) {
+        async function loadUserProfileAndContext(userId, retries = 5) {
             try {
                 // Force Supabase to refresh the local session token to pick up new user metadata
                 if (retries === 5) {
@@ -159,22 +164,31 @@
                     return;
                 }
 
-                // FALLBACK BYPASS: If it still fails, let's break the loading screen anyway so you can debug or try using the app
+                // FALLBACK BYPASS: If it still fails, break loading screen anyway for testing layout state
                 if (!profile || !profile.organization_id) {
                     console.error("Auth Error: Profile row or organization_id is missing in public.profiles table.");
                     
-                    // Temporary mock settings so the UI doesn't crash
                     userProfile = profile || { organization_id: 'DEBUG_MODE' };
                     navOrgDisplay.textContent = "Debug Mode (Check DB Triggers)";
+                    if (navUserDisplay) navUserDisplay.textContent = "Unknown Identity (Error)";
                     overlay.classList.add('hidden');
                     
                     alert("Workspace data not found in database. Entering fallback debug mode so you can inspect the console/page.");
                     return;
                 }
 
-                // Standard Successful Boot
+                // Standard Successful Boot Integration
                 userProfile = profile;
                 navOrgDisplay.textContent = `${profile.organizations.org_name} (Code: ${profile.organizations.invite_code})`;
+                
+                // Formats and injects the dynamic string: "FullName (Role)"
+                if (navUserDisplay) {
+                    const cleanRole = profile.role ? profile.role.trim().toLowerCase() : 'user';
+                    // Beautiful custom mapping logic for aesthetic presentation
+                    const displayRole = cleanRole === 'admin' ? 'Administrator' : cleanRole === 'keeper' ? 'Store Keeper' : 'Team Member';
+                    navUserDisplay.textContent = `${profile.full_name || 'Active Worker'} • ${displayRole}`;
+                }
+                
                 overlay.classList.add('hidden');
 
                 await fetchInventory();
@@ -356,7 +370,6 @@
             a.download = `medistock_${new Date().toISOString().split('T')[0]}.csv`;
             document.body.appendChild(a); a.click(); document.body.removeChild(a);
         });
-    </script>
+</script>
 </body>
-  </html>
-                      
+</html>
