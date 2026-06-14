@@ -126,10 +126,20 @@
         let inventory = [];
         let userProfile = null;
 
+        // --- ALL DOM SELECTORS DECLARED FIRST TO PREVENT TDZ DEADLOCKS ---
         const navOrgDisplay = document.getElementById('nav-org-display');
         const navUserDisplay = document.getElementById('nav-user-display');
         const logoutBtn = document.getElementById('logout-btn');
         const overlay = document.getElementById('loading-overlay');
+        const form = document.getElementById('product-form');
+        const tableBody = document.getElementById('inventory-table-body');
+        const emptyState = document.getElementById('empty-state');
+        const searchBar = document.getElementById('search-bar');
+        const sortDropdown = document.getElementById('sort-dropdown');
+        const exportBtn = document.getElementById('export-btn');
+        const totalItemsEl = document.getElementById('total-items');
+        const expiredBadge = document.getElementById('expired-badge');
+        const warningBadge = document.getElementById('warning-badge');
 
         // Initial Security Guard Verification Sequence
         const { data: { session } } = await supabaseClient.auth.getSession();
@@ -196,16 +206,6 @@
         logoutBtn.addEventListener('click', () => supabaseClient.auth.signOut());
 
         // --- INVENTORY ENGINE DRIVERS ---
-        const form = document.getElementById('product-form');
-        const tableBody = document.getElementById('inventory-table-body');
-        const emptyState = document.getElementById('empty-state');
-        const searchBar = document.getElementById('search-bar');
-        const sortDropdown = document.getElementById('sort-dropdown');
-        const exportBtn = document.getElementById('export-btn');
-        const totalItemsEl = document.getElementById('total-items');
-        const expiredBadge = document.getElementById('expired-badge');
-        const warningBadge = document.getElementById('warning-badge');
-
         async function fetchInventory() {
             const { data, error } = await supabaseClient
                 .from('inventory')
@@ -215,7 +215,7 @@
             if (!error) {
                 inventory = data || [];
                 updateStats();
-                renderTable(); // Renders clean immediately with data
+                renderTable(); 
             }
         }
 
