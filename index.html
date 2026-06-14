@@ -164,7 +164,7 @@
                                     <th class="p-4">Qty</th>
                                     <th class="p-4">Expiry Date</th>
                                     <th class="p-4 text-right">Actions</th>
-                                }</tr>
+                                </tr>
                             </thead>
                             <tbody id="inventory-table-body" class="divide-y divide-slate-100 text-sm">
                                 <!-- Dynamic rows injected here -->
@@ -188,7 +188,7 @@
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBtZWd3bWlvbWVidXVvZ2t4enRrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1MzE5MDksImV4cCI6MjA5NTEwNzkwOX0.kn2YCiXXGbOHvL47dAxgqGSEgRAImwS5ZYz9AMCfZeQ';
         const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        // Core Platform Structural State State
+        // Core Platform Structural State
         let inventory = [];
         let userProfile = null;
         let isLoginMode = true;
@@ -248,12 +248,74 @@
             });
         });
 
+        // Handle Form Submission: Route to Login or Multi-Tier Signup Pipeline
+        authForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('auth-email').value.trim();
+            const password = document.getElementById('auth-password').value;
+
+            if (isLoginMode) {
+                // Sign In Execution Pathway
+                const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+                if (error) alert("Login Error: " + error.message);
+            } else {
+                // Registration Execution Pathway
+                const fullName = document.getElementById('auth-name').value.trim();
+                const selectedRole = document.querySelector('input[name="auth-role"]:checked').value;
+
+                if (selectedRole === 'keeper') {
+                    // Keeper validation sequence
+                    const code = document.getElementById('auth-invite').value.trim().toUpperCase();
+                    const { data: org, error: orgErr } = await supabaseClient
+                        .from('organizations')
+                        .select('id')
+                        .eq('invite_code', code)
+                        .single();
+
+                    if (orgErr || !org) {
+                        alert("Invalid Invite Code. Please check with your supervisor.");
+                        return;
+                    }
+
+                    const { error } = await supabaseClient.auth.signUp({
+                        email,
+                        password,
+                        options: { data: { full_name: fullName, role: 'keeper', organization_id: org.id } }
+                    });
+                    if (error) alert("Registration failed: " + error.message);
+                    else alert("Account Created! You can now switch to the 'Sign In' tab.");
+                } else {
+                    // Admin registration sequence: Simply hand metadata to the upgraded database pipeline
+                    const companyName = document.getElementById('auth-org-name').value.trim();
+                    
+                    const { error } = await supabaseClient.auth.signUp({
+                        email,
+                        password,
+                        options: { 
+                            data: { 
+                                full_name: fullName, 
+                                role: 'admin', 
+                                org_name: companyName 
+                            } 
+                        }
+                    });
+
+                    if (error) {
+                        alert("Registration failed: " + error.message);
+                    } else {
+                        alert("Workspace created! Switch over to the 'Sign In' tab to access your new dashboard.");
+                    }
+                }
+            }
+        });
+
+        logoutBtn.addEventListener('click', () => supabaseClient.auth.signOut());
+
         // --- CORE APPLICATION LIFECYCLE LISTENERS ---
         supabaseClient.auth.onAuthStateChange(async (event, session) => {
             if (session) {
                 await loadUserProfileAndContext(session.user.id);
             } else {
-                // Wipe user instance state and load Auth view gateway
                 userProfile = null;
                 inventory = [];
                 dashboardView.classList.add('hidden');
@@ -263,152 +325,42 @@
 
         async function loadUserProfileAndContext(userId) {
             try {
-                // Look up user company and profile assignments
                 const { data: profile, error } = await supabaseClient
                     .from('profiles')
                     .select('*, organizations(org_name, invite_code)')
                     .eq('id', userId)
-                    .single();
+                    .maybeSingle();
 
                 if (error || !profile || !profile.organization_id) {
-                    console.error("Context assignment routing delayed. retrying...");
+                    // Fallback timing delay safeguard to wait for the Postgres trigger to settle
+                    setTimeout(async () => {
+                        const { data: retryProfile } = await supabaseClient
+                            .from('profiles')
+                            .select('*, organizations(org_name, invite_code)')
+                            .eq('id', userId)
+                            .maybeSingle();
+                        
+                        if (retryProfile && retryProfile.organization_id) {
+                            renderDashboard(retryProfile);
+                        }
+                    }, 1000);
                     return;
                 }
 
-                userProfile = profile;
-                
-                // Set Navbar Labels
-                navOrgDisplay.textContent = `${profile.organizations.org_name} (Code: ${profile.organizations.invite_code})`;
-                
-                // Swap views safely
-                authView.classList.add('hidden');
-                dashboardView.classList.remove('hidden');
-
-                // Kickstart data tracking pipelines for tenant context
-                await fetchInventory();
-                initializeRealtimeSync();
+                renderDashboard(profile);
             } catch (err) {
                 console.error(err);
             }
         }
 
-        // Handle Form Submission: Route to Login or Multi-Tier Signup Pipeline
-        authForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const email = document.getElementById('auth-email').value.trim();
-    const password = document.getElementById('auth-password').value;
-
-    if (isLoginMode) {
-        // Sign In Execution Pathway
-        const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
-        if (error) alert("Login Error: " + error.message);
-    } else {
-        // Registration Execution Pathway
-        const fullName = document.getElementById('auth-name').value.trim();
-        const selectedRole = document.querySelector('input[name="auth-role"]:checked').value;
-
-        if (selectedRole === 'keeper') {
-            // Keeper validation sequence
-            const code = document.getElementById('auth-invite').value.trim().toUpperCase();
-            const { data: org, error: orgErr } = await supabaseClient
-                .from('organizations')
-                .select('id')
-                .eq('invite_code', code)
-                .single();
-
-            if (orgErr || !org) {
-                alert("Invalid Invite Code. Please check with your supervisor.");
-                return;
-            }
-
-            const { error } = await supabaseClient.auth.signUp({
-                email,
-                password,
-                options: { data: { full_name: fullName, role: 'keeper', organization_id: org.id } }
-            });
-            if (error) alert("Registration failed: " + error.message);
-            else alert("Account Created! You can now switch to the 'Sign In' tab.");
-        } else {
-            // Admin registration sequence: Simply hand metadata to the upgraded database pipeline
-            const companyName = document.getElementById('auth-org-name').value.trim();
-            
-            const { error } = await supabaseClient.auth.signUp({
-                email,
-                password,
-                options: { 
-                    data: { 
-                        full_name: fullName, 
-                        role: 'admin', 
-                        org_name: companyName 
-                    } 
-                }
-            });
-
-            if (error) {
-                alert("Registration failed: " + error.message);
-            } else {
-                alert("Workspace created! Switch over to the 'Sign In' tab to access your new dashboard.");
-            }
+        function renderDashboard(profile) {
+            userProfile = profile;
+            navOrgDisplay.textContent = `${profile.organizations.org_name} (Code: ${profile.organizations.invite_code})`;
+            authView.classList.add('hidden');
+            dashboardView.classList.remove('hidden');
+            fetchInventory();
+            initializeRealtimeSync();
         }
-    }
-});
-
-logoutBtn.addEventListener('click', () => supabaseClient.auth.signOut());
-
-
-// --- CORE APPLICATION LIFECYCLE LISTENERS ---
-supabaseClient.auth.onAuthStateChange(async (event, session) => {
-    if (session) {
-        await loadUserProfileAndContext(session.user.id);
-    } else {
-        userProfile = null;
-        inventory = [];
-        dashboardView.classList.add('hidden');
-        authView.classList.remove('hidden');
-    }
-});
-
-async function loadUserProfileAndContext(userId) {
-    try {
-        const { data: profile, error } = await supabaseClient
-            .from('profiles')
-            .select('*, organizations(org_name, invite_code)')
-            .eq('id', userId)
-            .maybeSingle();
-
-        if (error || !profile || !profile.organization_id) {
-            // Fallback timing delay safeguard to wait for the Postgres trigger to settle
-            setTimeout(async () => {
-                const { data: retryProfile } = await supabaseClient
-                    .from('profiles')
-                    .select('*, organizations(org_name, invite_code)')
-                    .eq('id', userId)
-                    .maybeSingle();
-                
-                if (retryProfile && retryProfile.organization_id) {
-                    renderDashboard(retryProfile);
-                }
-            }, 1000);
-            return;
-        }
-
-        renderDashboard(profile);
-    } catch (err) {
-        console.error(err);
-    }
-}
-
-function renderDashboard(profile) {
-    userProfile = profile;
-    navOrgDisplay.textContent = `${profile.organizations.org_name} (Code: ${profile.organizations.invite_code})`;
-    authView.classList.add('hidden');
-    dashboardView.classList.remove('hidden');
-    fetchInventory();
-    initializeRealtimeSync();
-}
-
-        logoutBtn.addEventListener('click', () => supabaseClient.auth.signOut());
-
 
         // --- INVENTORY MANAGEMENT DRIVERS SCOPED BY TENANT ---
         const form = document.getElementById('product-form');
