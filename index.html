@@ -171,107 +171,195 @@ window.deleteItem = async (id) => {
     }
 };
 
-// 5. Adjust Quantity Inline (Update)
-window.updateQty = async (id, delta) => {
-    const item = inventory.find(item => item.id === id);
-    if (!item) return;
+    <!-- Logic Script -->
+    <script>
+        // 1. Initialize Supabase Client safely using a distinct instance name
+        const SUPABASE_URL = 'https://pmegwmiomebuuogkxztk.supabase.co'; // Clean base URL
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBtZWd3bWlvbWVidXVvZ2t4enRrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1MzE5MDksImV4cCI6MjA5NTEwNzkwOX0.kn2YCiXXGbOHvL47dAxgqGSEgRAImwS5ZYz9AMCfZeQ';
+        
+        // Using 'supabaseClient' avoids conflicts with the CDN library object
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    const newQty = Math.max(0, item.qty + delta);
+        // State management
+        let inventory = [];
 
-    const { error } = await supabase
-        .from('inventory')
-        .update({ qty: newQty })
-        .eq('id', id);
+        // DOM elements
+        const form = document.getElementById('product-form');
+        const tableBody = document.getElementById('inventory-table-body');
+        const emptyState = document.getElementById('empty-state');
+        const searchBar = document.getElementById('search-bar');
 
-    if (error) {
-        alert('Failed to update quantity: ' + error.message);
-    } else {
-        item.qty = newQty;
-        renderTable();
-    }
-};
+        // Stats elements
+        const totalItemsEl = document.getElementById('total-items');
+        const expiredBadge = document.getElementById('expired-badge');
+        const warningBadge = document.getElementById('warning-badge');
 
-// Live Search filtering (Client-side)
-searchBar.addEventListener('input', (e) => {
-    renderTable(e.target.value.toLowerCase());
-});
+        // 2. Fetch Data on Load
+        async function fetchInventory() {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('inventory')
+                    .select('*')
+                    .order('expiry', { ascending: true });
 
-// Determine Expiry Status
-function getExpiryStatus(dateString) {
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    const expiryDate = new Date(dateString);
-    expiryDate.setHours(0,0,0,0);
-    
-    const diffTime = expiryDate - today;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                if (error) {
+                    console.error('Error fetching inventory:', error.message);
+                    return;
+                }
 
-    if (diffDays < 0) return { status: 'expired', class: 'bg-red-50 text-red-700 border-red-200', text: 'Expired' };
-    if (diffDays <= 90) return { status: 'warning', class: 'bg-amber-50 text-amber-700 border-amber-200', text: `Expires in ${diffDays} days` };
-    return { status: 'safe', class: 'bg-green-50 text-green-700 border-green-200', text: 'Safe' };
-}
+                inventory = data || [];
+                renderTable();
+                updateStats();
+            } catch (err) {
+                console.error('Database connection failed:', err);
+            }
+        }
 
-// Render Table UI
-function renderTable(filter = '') {
-    tableBody.innerHTML = '';
-    const filteredData = inventory.filter(item => item.name.toLowerCase().includes(filter));
-
-    if (filteredData.length === 0) {
-        emptyState.classList.remove('hidden');
-        return;
-    }
-    emptyState.classList.add('hidden');
-
-    filteredData.forEach(item => {
-        const expiryInfo = getExpiryStatus(item.expiry);
-        const formattedDate = new Date(item.expiry).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-
-        const row = document.createElement('tr');
-        row.className = "hover:bg-slate-50/50 transition-colors";
-        row.innerHTML = `
-            <td class="p-4 font-medium text-slate-900">${item.name}</td>
-            <td class="p-4 text-slate-500 font-mono">${item.batch}</td>
-            <td class="p-4 font-semibold">
-                <div class="flex items-center gap-2">
-                    <button onclick="updateQty('${item.id}', -1)" class="w-6 h-6 rounded border border-slate-200 flex items-center justify-center hover:bg-slate-100 cursor-pointer">-</button>
-                    <span class="${item.qty === 0 ? 'text-red-500 font-bold' : ''}">${item.qty}</span>
-                    <button onclick="updateQty('${item.id}', 1)" class="w-6 h-6 rounded border border-slate-200 flex items-center justify-center hover:bg-slate-100 cursor-pointer">+</button>
-                </div>
-            </td>
-            <td class="p-4">
-                <div class="flex flex-col gap-0.5">
-                    <span class="font-medium">${formattedDate}</span>
-                    <span class="text-[11px] px-1.5 py-0.5 rounded border w-fit font-medium ${expiryInfo.class}">${expiryInfo.text}</span>
-                </div>
-            </td>
-            <td class="p-4 text-right">
-                <button onclick="deleteItem('${item.id}')" class="text-slate-400 hover:text-red-600 font-medium transition-colors cursor-pointer">Remove</button>
-            </td>
-        `;
-        tableBody.appendChild(row);
-    });
-}
-
-// Update Overview Statistics
-function updateStats() {
-    totalItemsEl.textContent = `Total Items: ${inventory.length}`;
-    
-    let expiredCount = 0;
-    let warningCount = 0;
-
-    inventory.forEach(item => {
-        const check = getExpiryStatus(item.expiry);
-        if (check.status === 'expired') expiredCount++;
-        if (check.status === 'warning') warningCount++;
-    });
-
-    expiredBadge.textContent = `${expiredCount} Expired`;
-    warningBadge.textContent = `${warningCount} Near Expiry (90d)`;
-}
-
-// Kick off initial database load
-fetchInventory();
+        // 3. Handle Form Submission (Insert)
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault(); // This stops the page from reloading!
             
+            const newItem = {
+                name: document.getElementById('item-name').value.trim(),
+                qty: parseInt(document.getElementById('item-qty').value),
+                batch: document.getElementById('item-batch').value.trim(),
+                expiry: document.getElementById('item-expiry').value
+            };
+
+            const { data, error } = await supabaseClient
+                .from('inventory')
+                .insert([newItem])
+                .select();
+
+            if (error) {
+                alert('Failed to add item: ' + error.message);
+            } else if (data && data.length > 0) {
+                inventory.push(data[0]);
+                renderTable();
+                updateStats();
+                form.reset();
+            } else {
+                fetchInventory();
+                form.reset();
+            }
+        });
+
+        // 4. Delete Item
+        window.deleteItem = async (id) => {
+            const { error } = await supabaseClient
+                .from('inventory')
+                .delete()
+                .eq('id', id);
+
+            if (error) {
+                alert('Failed to delete item: ' + error.message);
+            } else {
+                inventory = inventory.filter(item => item.id !== id);
+                renderTable();
+                updateStats();
+            }
+        };
+
+        // 5. Adjust Quantity Inline (Update)
+        window.updateQty = async (id, delta) => {
+            const item = inventory.find(item => item.id === id);
+            if (!item) return;
+
+            const newQty = Math.max(0, item.qty + delta);
+
+            const { error } = await supabaseClient
+                .from('inventory')
+                .update({ qty: newQty })
+                .eq('id', id);
+
+            if (error) {
+                alert('Failed to update quantity: ' + error.message);
+            } else {
+                item.qty = newQty;
+                renderTable();
+            }
+        };
+
+        // Live Search filtering (Client-side)
+        searchBar.addEventListener('input', (e) => {
+            renderTable(e.target.value.toLowerCase());
+        });
+
+        // Determine Expiry Status
+        function getExpiryStatus(dateString) {
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            const expiryDate = new Date(dateString);
+            expiryDate.setHours(0,0,0,0);
+            
+            const diffTime = expiryDate - today;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+            if (diffDays < 0) return { status: 'expired', class: 'bg-red-50 text-red-700 border-red-200', text: 'Expired' };
+            if (diffDays <= 90) return { status: 'warning', class: 'bg-amber-50 text-amber-700 border-amber-200', text: `Expires in ${diffDays} days` };
+            return { status: 'safe', class: 'bg-green-50 text-green-700 border-green-200', text: 'Safe' };
+        }
+
+        // Render Table UI
+        function renderTable(filter = '') {
+            tableBody.innerHTML = '';
+            const filteredData = inventory.filter(item => item.name.toLowerCase().includes(filter));
+
+            if (filteredData.length === 0) {
+                emptyState.classList.remove('hidden');
+                return;
+            }
+            emptyState.classList.add('hidden');
+
+            filteredData.forEach(item => {
+                const expiryInfo = getExpiryStatus(item.expiry);
+                const formattedDate = new Date(item.expiry).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+
+                const row = document.createElement('tr');
+                row.className = "hover:bg-slate-50/50 transition-colors";
+                row.innerHTML = `
+                    <td class="p-4 font-medium text-slate-900">${item.name}</td>
+                    <td class="p-4 text-slate-500 font-mono">${item.batch}</td>
+                    <td class="p-4 font-semibold">
+                        <div class="flex items-center gap-2">
+                            <button onclick="updateQty('${item.id}', -1)" class="w-6 h-6 rounded border border-slate-200 flex items-center justify-center hover:bg-slate-100 cursor-pointer">-</button>
+                            <span class="${item.qty === 0 ? 'text-red-500 font-bold' : ''}">${item.qty}</span>
+                            <button onclick="updateQty('${item.id}', 1)" class="w-6 h-6 rounded border border-slate-200 flex items-center justify-center hover:bg-slate-100 cursor-pointer">+</button>
+                        </div>
+                    </td>
+                    <td class="p-4">
+                        <div class="flex flex-col gap-0.5">
+                            <span class="font-medium">${formattedDate}</span>
+                            <span class="text-[11px] px-1.5 py-0.5 rounded border w-fit font-medium ${expiryInfo.class}">${expiryInfo.text}</span>
+                        </div>
+                    </td>
+                    <td class="p-4 text-right">
+                        <button onclick="deleteItem('${item.id}')" class="text-slate-400 hover:text-red-600 font-medium transition-colors cursor-pointer">Remove</button>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+
+        // Update Overview Statistics
+        function updateStats() {
+            totalItemsEl.textContent = `Total Items: ${inventory.length}`;
+            
+            let expiredCount = 0;
+            let warningCount = 0;
+
+            inventory.forEach(item => {
+                const check = getExpiryStatus(item.expiry);
+                if (check.status === 'expired') expiredCount++;
+                if (check.status === 'warning') warningCount++;
+            });
+
+            expiredBadge.textContent = `${expiredCount} Expired`;
+            warningBadge.textContent = `${warningCount} Near Expiry (90d)`;
+        }
+
+        // Kick off initial database load
+        fetchInventory();
     </script>
 </body>
   </html>
