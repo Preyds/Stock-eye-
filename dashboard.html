@@ -138,7 +138,7 @@
             if (!session) window.location.href = 'index.html';
         });
 
-        async function loadUserProfileAndContext(userId, retries = 4) {
+                async function loadUserProfileAndContext(userId, retries = 8) { // Increased base retries from 4 to 8
             try {
                 const { data: profile, error } = await supabaseClient
                     .from('profiles')
@@ -146,17 +146,21 @@
                     .eq('id', userId)
                     .maybeSingle();
 
+                // Check if profile is missing, or if database triggers are still working on linking the organization
                 if ((error || !profile || !profile.organization_id) && retries > 0) {
-                    setTimeout(() => loadUserProfileAndContext(userId, retries - 1), 1500);
+                    console.log(`Database profiles row settling... Retries remaining: ${retries}`);
+                    setTimeout(() => loadUserProfileAndContext(userId, retries - 1), 2000); // 2-second interval gives the database breathing room
                     return;
                 }
 
+                // If it completely runs out of time after 16 total seconds
                 if (!profile || !profile.organization_id) {
-                    alert("Profile assembly timeout. Please contact administrator.");
-                    await supabaseClient.auth.signOut();
+                    alert("Your workspace setup is taking a moment to initialize on our servers. Please wait a few seconds and refresh this page.");
+                    overlay.classList.add('hidden'); // Hide the spinner so they can see the layout or reload manually
                     return;
                 }
 
+                // If everything is found successfully, bind the session context
                 userProfile = profile;
                 navOrgDisplay.textContent = `${profile.organizations.org_name} (Code: ${profile.organizations.invite_code})`;
                 overlay.classList.add('hidden');
@@ -164,7 +168,8 @@
                 await fetchInventory();
                 initializeRealtimeSync();
             } catch (err) {
-                console.error(err);
+                console.error("Dashboard Boot Error:", err);
+                alert("An unexpected error occurred while verifying your workspace.");
             }
         }
 
