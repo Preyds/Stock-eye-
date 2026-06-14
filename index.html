@@ -13,7 +13,13 @@
     <nav class="bg-blue-600 text-white shadow-md p-4">
         <div class="max-w-6xl mx-auto flex justify-between items-center">
             <h1 class="text-xl font-bold tracking-tight">📦 MediStock Tracker</h1>
-            <span class="text-sm bg-blue-700 px-3 py-1 rounded-full" id="total-items">Total Items: 0</span>
+            <div class="flex items-center gap-3">
+                <!-- Option 3 Action Button Inserted into Navbar Layout -->
+                <button id="export-btn" class="text-xs bg-blue-500 hover:bg-blue-700 font-semibold px-3 py-1.5 rounded-full transition-colors cursor-pointer flex items-center gap-1 border border-blue-400/30 shadow-sm">
+                    📥 Export CSV
+                </button>
+                <span class="text-sm bg-blue-700 px-3 py-1 rounded-full" id="total-items">Total Items: 0</span>
+            </div>
         </div>
     </nav>
 
@@ -116,6 +122,7 @@
         const emptyState = document.getElementById('empty-state');
         const searchBar = document.getElementById('search-bar');
         const sortDropdown = document.getElementById('sort-dropdown');
+        const exportBtn = document.getElementById('export-btn');
         
         const totalItemsEl = document.getElementById('total-items');
         const expiredBadge = document.getElementById('expired-badge');
@@ -222,6 +229,49 @@
                 console.error(err);
             }
         };
+
+        // Option 3 Logic: Compile local state array into downloaded spreadsheet file
+        exportBtn.addEventListener('click', () => {
+            if (inventory.length === 0) {
+                alert('There are no items in your inventory tracking database to export.');
+                return;
+            }
+
+            // Standard spreadsheet formatting headers
+            const headers = ['Item Name', 'Batch ID', 'Quantity', 'Expiry Date', 'Status Class'];
+            
+            // Format spreadsheet data rows safely escaping quotes or comma breaking text structures
+            const csvRows = inventory.map(item => {
+                const statusCheck = getExpiryStatus(item.expiry);
+                const safeName = `"${item.name.replace(/"/g, '""')}"`;
+                const safeBatch = `"${item.batch.replace(/"/g, '""')}"`;
+                
+                return [
+                    safeName,
+                    safeBatch,
+                    item.qty,
+                    item.expiry,
+                    statusCheck.text
+                ].join(',');
+            });
+
+            // Combine components into unified spreadsheet data string
+            const csvContent = [headers.join(','), ...csvRows].join('\n');
+            
+            // Build temporary application download binary link pipeline
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const downloadUrl = URL.createObjectURL(blob);
+            const hiddenAnchor = document.createElement('a');
+            const fileTimestamp = new Date().toISOString().split('T')[0];
+            
+            hiddenAnchor.setAttribute('href', downloadUrl);
+            hiddenAnchor.setAttribute('download', `medistock_report_${fileTimestamp}.csv`);
+            hiddenAnchor.style.visibility = 'hidden';
+            
+            document.body.appendChild(hiddenAnchor);
+            hiddenAnchor.click();
+            document.body.removeChild(hiddenAnchor);
+        });
 
         // Listen for Search and Dropdown Sort adjustments
         searchBar.addEventListener('input', () => renderTable());
