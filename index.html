@@ -89,112 +89,26 @@
         </section>
     </main>
 
-    <!-- Logic Script -->
-    <script>
-        // State management
-        let inventory = JSON.parse(localStorage.getItem('inventory')) || [];
-
-        // DOM elements
-        const form = document.getElementById('product-form');
-        const tableBody = document.getElementById('inventory-table-body');
-        const emptyState = document.getElementById('empty-state');
-        const searchBar = document.getElementById('search-bar');
-        
-        // Stats elements
-        const totalItemsEl = document.getElementById('total-items');
-        const expiredBadge = document.getElementById('expired-badge');
-        const warningBadge = document.getElementById('warning-badge');
-
-        // Handle Form Submission
-        form.addEventListener('submit', (e) => {
-            e.preventDefault(); // Stop form reload
-            
-            const newItem = {
-                id: Date.now().toString(),
-                name: document.getElementById('item-name').value.trim(),
-                qty: parseInt(document.getElementById('item-qty').value),
-                batch: document.getElementById('item-batch').value.trim(),
-                expiry: document.getElementById('item-expiry').value
-            };
-
-            inventory.push(newItem);
-            saveAndRender();
-            form.reset();
-        });
-
-        // Delete Item
-        window.deleteItem = (id) => {
-            inventory = inventory.filter(item => item.id !== id);
-            saveAndRender();
-        };
-
-        // Adjust Quantity inline
-        window.updateQty = (id, delta) => {
-            const item = inventory.find(item => item.id === id);
-            if (item) {
-                item.qty = Math.max(0, item.qty + delta);
-                saveAndRender();
-            }
-        };
-
-        // Save to localStorage and re-render UI
-        function saveAndRender(filterText = '') {
-            localStorage.setItem('inventory', JSON.stringify(inventory));
-            renderTable(filterText);
-            updateStats();
-        }
-
-        // Live Search
-        searchBar.addEventListener('input', (e) => {
-            renderTable(e.target.value.toLowerCase());
-        });
-
-        // Determine Expiry Status
-        function getExpiryStatus(dateString) {
-            const today = new Date();
-            today.setHours(0,0,0,0);
-            const expiryDate = new Date(dateString);
-            expiryDate.setHours(0,0,0,0);
-            
-            // Calculate differences in days
-            const diffTime = expiryDate - today;
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-            if (diffDays < 0) return { status: 'expired', class: 'bg-red-50 text-red-700 border-red-200', text: 'Expired' };
-            if (diffDays <= 90) return { status: 'warning', class: 'bg-amber-50 text-amber-700 border-amber-200', text: `Expires in ${diffDays} days` };
-            return { status: 'safe', class: 'bg-green-50 text-green-700 border-green-200', text: 'Safe' };
-        }
-
-        // Render Table Data
-        function renderTable(filter = '') {
-            tableBody.innerHTML = '';
-            const filteredData = inventory.filter(item => item.name.toLowerCase().includes(filter));
-
-    <!-- Logic Script -->
+    <!-- Unified Cloud Module Logic Script -->
     <script type="module">
-        // Import the official Supabase SDK directly as an ES Module
         import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
-        // 1. Configured safely with a distinct variable name and clean base URL
         const SUPABASE_URL = 'https://pmegwmiomebuuogkxztk.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBtZWd3bWlvbWVidXVvZ2t4enRrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1MzE5MDksImV4cCI6MjA5NTEwNzkwOX0.kn2YCiXXGbOHvL47dAxgqGSEgRAImwS5ZYz9AMCfZeQ';
         const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        // State management
         let inventory = [];
 
-        // DOM elements
         const form = document.getElementById('product-form');
         const tableBody = document.getElementById('inventory-table-body');
         const emptyState = document.getElementById('empty-state');
         const searchBar = document.getElementById('search-bar');
         
-        // Stats elements
         const totalItemsEl = document.getElementById('total-items');
         const expiredBadge = document.getElementById('expired-badge');
         const warningBadge = document.getElementById('warning-badge');
 
-        // 2. Fetch inventory from cloud database
+        // Fetch items from cloud database
         async function fetchInventory() {
             try {
                 const { data, error } = await supabaseClient
@@ -215,9 +129,9 @@
             }
         }
 
-        // 3. Handle Form Submission (Insert to Cloud)
+        // Add new item to cloud database
         form.addEventListener('submit', async (e) => {
-            e.preventDefault(); // Verified form-reload safety block
+            e.preventDefault();
             
             const newItem = {
                 name: document.getElementById('item-name').value.trim(),
@@ -239,19 +153,19 @@
 
                 if (data && data.length > 0) {
                     inventory.push(data[0]);
-                    renderTable();
-                    updateStats();
-                    form.reset();
                 } else {
-                    fetchInventory();
-                    form.reset();
+                    await fetchInventory();
                 }
+                
+                renderTable();
+                updateStats();
+                form.reset();
             } catch (err) {
                 console.error('Unexpected insert error:', err);
             }
         });
 
-        // 4. Delete Item (Exposed to window so HTML inline onclick can see it)
+        // Delete item from cloud database
         window.deleteItem = async (id) => {
             try {
                 const { error } = await supabaseClient
@@ -272,7 +186,7 @@
             }
         };
 
-        // 5. Adjust Quantity Inline (Exposed to window so HTML inline onclick can see it)
+        // Update item quantity in cloud database
         window.updateQty = async (id, delta) => {
             const item = inventory.find(item => item.id === id);
             if (!item) return;
@@ -297,12 +211,12 @@
             }
         };
 
-        // Live Search
+        // Search interface input filtering
         searchBar.addEventListener('input', (e) => {
             renderTable(e.target.value.toLowerCase());
         });
 
-        // Determine Expiry Status
+        // Utility: Calculate item date statuses
         function getExpiryStatus(dateString) {
             const today = new Date();
             today.setHours(0,0,0,0);
@@ -317,7 +231,7 @@
             return { status: 'safe', class: 'bg-green-50 text-green-700 border-green-200', text: 'Safe' };
         }
 
-        // Render Table Data
+        // Generate and redraw table items
         function renderTable(filter = '') {
             tableBody.innerHTML = '';
             const filteredData = inventory.filter(item => item.name.toLowerCase().includes(filter));
@@ -358,7 +272,7 @@
             });
         }
 
-        // Calculate Overview Data
+        // Recalculate badge totals
         function updateStats() {
             totalItemsEl.textContent = `Total Items: ${inventory.length}`;
             
@@ -375,7 +289,7 @@
             warningBadge.textContent = `${warningCount} Near Expiry (90d)`;
         }
 
-        // Run cloud setup data fetch on load
+        // Initialize application lifecycle
         fetchInventory();
     </script>
 </body>
