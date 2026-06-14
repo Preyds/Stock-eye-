@@ -294,84 +294,118 @@
 
         // Handle Form Submission: Route to Login or Multi-Tier Signup Pipeline
         authForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('auth-email').value.trim();
-            const password = document.getElementById('auth-password').value;
+    e.preventDefault();
+    const email = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-password').value;
 
-            if (isLoginMode) {
-                // Sign In Flow
-                const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
-                if (error) alert("Login Error: " + error.message);
-            } else {
-                // Registration Flow
-                const fullName = document.getElementById('auth-name').value.trim();
-                const selectedRole = document.querySelector('input[name="auth-role"]:checked').value;
-                let targetOrgId = null;
+    if (isLoginMode) {
+        // Sign In Execution Pathway
+        const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+        if (error) alert("Login Error: " + error.message);
+    } else {
+        // Registration Execution Pathway
+        const fullName = document.getElementById('auth-name').value.trim();
+        const selectedRole = document.querySelector('input[name="auth-role"]:checked').value;
 
-                if (selectedRole === 'keeper') {
-                    // Keeper signup flow: Validate code and map organization
-                    const code = document.getElementById('auth-invite').value.trim().toUpperCase();
-                    const { data: org, error: orgErr } = await supabaseClient
-                        .from('organizations')
-                        .select('id')
-                        .eq('invite_code', code)
-                        .single();
+        if (selectedRole === 'keeper') {
+            // Keeper validation sequence
+            const code = document.getElementById('auth-invite').value.trim().toUpperCase();
+            const { data: org, error: orgErr } = await supabaseClient
+                .from('organizations')
+                .select('id')
+                .eq('invite_code', code)
+                .single();
 
-                    if (orgErr || !org) {
-                        alert("Invalid Invite Code. Please check with your supervisor.");
-                        return;
-                    }
-                    targetOrgId = org.id;
-
-                    // Signup user with meta matching automated routing hooks
-                    const { error } = await supabaseClient.auth.signUp({
-                        email,
-                        password,
-                        options: { data: { full_name: fullName, role: 'keeper', organization_id: targetOrgId } }
-                    });
-                    if (error) alert("Registration failed: " + error.message);
-                    else alert("Account Created! Check your email or try logging in.");
-                } else {
-                    // Admin signup flow: Manager registers brand new group entity
-                    const companyName = document.getElementById('auth-org-name').value.trim();
-                    const randomCode = 'MED-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-
-                    // Step 1: Create local user account 
-                    const { data: authData, error: signupErr } = await supabaseClient.auth.signUp({
-                        email,
-                        password,
-                        options: { data: { full_name: fullName, role: 'admin' } }
-                    });
-
-                    if (signupErr) {
-                        alert("Signup failed: " + signupErr.message);
-                        return;
-                    }
-
-                    if (authData?.user) {
-                        // Step 2: Since user session is active, insert organization row entry
-                        const { data: newOrg, error: orgCreateErr } = await supabaseClient
-                            .from('organizations')
-                            .insert([{ org_name: companyName, invite_code: randomCode }])
-                            .select()
-                            .single();
-
-                        if (orgCreateErr) {
-                            alert("Company workspace built failed: " + orgCreateErr.message);
-                            return;
-                        }
-
-                        // Step 3: Map user profile to own company
-                        await supabaseClient
-                            .from('profiles')
-                            .update({ organization_id: newOrg.id })
-                            .eq('id', authData.user.id);
-
-                        await loadUserProfileAndContext(authData.user.id);
-                    }
-                }
+            if (orgErr || !org) {
+                alert("Invalid Invite Code. Please check with your supervisor.");
+                return;
             }
-        });
+
+            const { error } = await supabaseClient.auth.signUp({
+                email,
+                password,
+                options: { data: { full_name: fullName, role: 'keeper', organization_id: org.id } }
+            });
+            if (error) alert("Registration failed: " + error.message);
+            else alert("Account Created! You can now switch to the 'Sign In' tab.");
+        } else {
+            // Admin registration sequence: Simply hand metadata to the upgraded database pipeline
+            const companyName = document.getElementById('auth-org-name').value.trim();
+            
+            const { error } = await supabaseClient.auth.signUp({
+                email,
+                password,
+                options: { 
+                    data: { 
+                        full_name: fullName, 
+                        role: 'admin', 
+                        org_name: companyName 
+                    } 
+                }
+            });
+
+            if (error) {
+                alert("Registration failed: " + error.message);
+            } else {
+                alert("Workspace created! Switch over to the 'Sign In' tab to access your new dashboard.");
+            }
+        }
+    }
+});
+
+logoutBtn.addEventListener('click', () => supabaseClient.auth.signOut());
+
+
+// --- CORE APPLICATION LIFECYCLE LISTENERS ---
+supabaseClient.auth.onAuthStateChange(async (event, session) => {
+    if (session) {
+        await loadUserProfileAndContext(session.user.id);
+    } else {
+        userProfile = null;
+        inventory = [];
+        dashboardView.classList.add('hidden');
+        authView.classList.remove('hidden');
+    }
+});
+
+async function loadUserProfileAndContext(userId) {
+    try {
+        const { data: profile, error } = await supabaseClient
+            .from('profiles')
+            .select('*, organizations(org_name, invite_code)')
+            .eq('id', userId)
+            .maybeSingle();
+
+        if (error || !profile || !profile.organization_id) {
+            // Fallback timing delay safeguard to wait for the Postgres trigger to settle
+            setTimeout(async () => {
+                const { data: retryProfile } = await supabaseClient
+                    .from('profiles')
+                    .select('*, organizations(org_name, invite_code)')
+                    .eq('id', userId)
+                    .maybeSingle();
+                
+                if (retryProfile && retryProfile.organization_id) {
+                    renderDashboard(retryProfile);
+                }
+            }, 1000);
+            return;
+        }
+
+        renderDashboard(profile);
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+function renderDashboard(profile) {
+    userProfile = profile;
+    navOrgDisplay.textContent = `${profile.organizations.org_name} (Code: ${profile.organizations.invite_code})`;
+    authView.classList.add('hidden');
+    dashboardView.classList.remove('hidden');
+    fetchInventory();
+    initializeRealtimeSync();
+}
 
         logoutBtn.addEventListener('click', () => supabaseClient.auth.signOut());
 
