@@ -278,16 +278,39 @@
                 const expiryInfo = getExpiryStatus(item.expiry);
                 const formattedDate = new Date(item.expiry).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 
+                // Option 2 Part A: Dynamic row tinting based on visual urgency
+                let rowClass = "hover:bg-slate-50/50 transition-colors";
+                if (expiryInfo.status === 'expired') {
+                    rowClass = "bg-red-50/40 hover:bg-red-100/50 text-red-950 transition-colors";
+                } else if (expiryInfo.status === 'warning') {
+                    rowClass = "bg-amber-50/30 hover:bg-amber-100/40 text-amber-950 transition-colors";
+                }
+
+                // Option 2 Part B: Smart low-stock threshold warning systems
+                let qtyClass = "font-semibold text-slate-900";
+                let qtyBadge = "";
+                
+                if (item.qty === 0) {
+                    qtyClass = "text-red-600 font-bold";
+                    qtyBadge = `<span class="text-[10px] px-1.5 py-0.5 font-bold uppercase tracking-wide bg-red-100 text-red-800 rounded-sm border border-red-200 w-fit">OUT</span>`;
+                } else if (item.qty < 10) {
+                    qtyClass = "text-amber-600 font-bold";
+                    qtyBadge = `<span class="text-[10px] px-1.5 py-0.5 font-bold uppercase tracking-wide bg-amber-100 text-amber-800 rounded-sm border border-amber-200 w-fit">LOW</span>`;
+                }
+
                 const row = document.createElement('tr');
-                row.className = "hover:bg-slate-50/50 transition-colors";
+                row.className = rowClass;
                 row.innerHTML = `
                     <td class="p-4 font-medium text-slate-900">${item.name}</td>
                     <td class="p-4 text-slate-500 font-mono">${item.batch}</td>
-                    <td class="p-4 font-semibold">
+                    <td class="p-4">
                         <div class="flex items-center gap-2">
-                            <button onclick="updateQty('${item.id}', -1)" class="w-6 h-6 rounded border border-slate-200 flex items-center justify-center hover:bg-slate-100 cursor-pointer">-</button>
-                            <span class="${item.qty === 0 ? 'text-red-500 font-bold' : ''}">${item.qty}</span>
-                            <button onclick="updateQty('${item.id}', 1)" class="w-6 h-6 rounded border border-slate-200 flex items-center justify-center hover:bg-slate-100 cursor-pointer">+</button>
+                            <button onclick="updateQty('${item.id}', -1)" class="w-6 h-6 rounded border border-slate-200 flex items-center justify-center hover:bg-slate-200 font-bold text-slate-700 cursor-pointer transition-colors">-</button>
+                            <div class="flex flex-col items-center min-w-[2.5rem] gap-0.5">
+                                <span class="${qtyClass}">${item.qty}</span>
+                                ${qtyBadge}
+                            </div>
+                            <button onclick="updateQty('${item.id}', 1)" class="w-6 h-6 rounded border border-slate-200 flex items-center justify-center hover:bg-slate-200 font-bold text-slate-700 cursor-pointer transition-colors">+</button>
                         </div>
                     </td>
                     <td class="p-4">
