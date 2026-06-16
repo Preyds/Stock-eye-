@@ -266,7 +266,18 @@
         window.updateQty = async (id, delta) => {
             const item = inventory.find(i => i.id === id);
             if (!item) return;
-            await supabaseClient.from('inventory').update({ qty: Math.max(0, item.qty + delta) }).eq('id', id);
+            const targetQty = Math.max(0, item.qty + delta);
+            await supabaseClient.from('inventory').update({ qty: targetQty }).eq('id', id);
+        };
+
+        // NEW: Handles bulk programmatic entry typing values directly inside grid fields
+        window.saveBulkQty = async (id, inputElement) => {
+            let value = parseInt(inputElement.value);
+            if (isNaN(value) || value < 0) {
+                value = 0;
+            }
+            inputElement.value = value;
+            await supabaseClient.from('inventory').update({ qty: value }).eq('id', id);
         };
 
         searchBar.addEventListener('input', () => renderTable());
@@ -318,12 +329,15 @@
                     <td class="p-4 font-mono text-slate-500">${item.batch}</td>
                     <td class="p-4">
                         <div class="flex items-center gap-2">
-                            <button onclick="updateQty('${item.id}', -1)" class="w-6 h-6 rounded border border-slate-200 flex items-center justify-center hover:bg-slate-200 font-bold text-slate-700 cursor-pointer">-</button>
-                            <div class="flex flex-col items-center min-w-[2.5rem]">
-                                <span class="${qtyClass}">${item.qty}</span>
+                            <button onclick="updateQty('${item.id}', -1)" class="w-6 h-6 rounded border border-slate-200 flex items-center justify-center hover:bg-slate-200 font-bold text-slate-700 cursor-pointer select-none">-</button>
+                            <div class="flex flex-col items-center min-w-[3.5rem]">
+                                <input type="number" min="0" value="${item.qty}" 
+                                    onchange="saveBulkQty('${item.id}', this)"
+                                    onkeydown="if(event.key==='Enter') saveBulkQty('${item.id}', this)"
+                                    class="w-16 p-1 text-center bg-transparent border border-transparent hover:border-slate-300 focus:border-blue-500 focus:bg-white rounded outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${qtyClass}" />
                                 ${qtyBadge}
                             </div>
-                            <button onclick="updateQty('${item.id}', 1)" class="w-6 h-6 rounded border border-slate-200 flex items-center justify-center hover:bg-slate-200 font-bold text-slate-700 cursor-pointer">+</button>
+                            <button onclick="updateQty('${item.id}', 1)" class="w-6 h-6 rounded border border-slate-200 flex items-center justify-center hover:bg-slate-200 font-bold text-slate-700 cursor-pointer select-none">+</button>
                         </div>
                     </td>
                     <td class="p-4">
